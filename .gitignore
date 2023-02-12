@@ -1,0 +1,5 @@
+eval
+__pycache__
+models
+train
+trained_model
