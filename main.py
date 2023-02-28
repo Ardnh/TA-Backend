@@ -25,7 +25,7 @@ detection_model = model_builder.build(model_config=configs['model'], is_training
 
 # Restore checkpoint
 ckpt = tf.compat.v2.train.Checkpoint(model=detection_model)
-ckpt.restore('./trained_model/ckpt-13').expect_partial()
+ckpt.restore('./trained_model/ckpt-7').expect_partial()
 
 category_index = label_map_util.create_category_index_from_labelmap('./trained_model/label_map.pbtxt')
 
@@ -86,7 +86,9 @@ async def predict(file: UploadFile):
                 agnostic_mode=False)
 
     plt.imshow(cv2.cvtColor(image_np_with_detections, cv2.COLOR_RGB2RGBA))
-    plt.savefig(os.path.join('./predicted_img/', file.filename))
+
+    plt.axis('off')
+    plt.savefig(os.path.join('./predicted_img/', file.filename), bbox_inches='tight', pad_inches=0)
 
     predictedImagePath = os.path.join('/predicted_img', file.filename)
 
