@@ -3,3 +3,5 @@ __pycache__
 models
 train
 trained_model
+original_img
+predicted_img

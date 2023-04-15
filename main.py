@@ -6,8 +6,10 @@ from io import BytesIO
 import tensorflow as tf
 import numpy as np
 import cv2
+import six
 from PIL import Image
 from matplotlib import pyplot as plt
+from collections import Counter
 from object_detection.utils import label_map_util
 from object_detection.utils import visualization_utils as viz_utils
 from object_detection.builders import model_builder
@@ -20,14 +22,14 @@ app.mount("/original_img", StaticFiles(directory="original_img"), name="original
 app.mount("/predicted_img", StaticFiles(directory="predicted_img"), name="predicted_img")
 
 # Load pipeline config and build a detection model
-configs = config_util.get_configs_from_pipeline_file('./trained_model/pipeline.config')
+configs = config_util.get_configs_from_pipeline_file('./trained_model/model/pipeline.config')
 detection_model = model_builder.build(model_config=configs['model'], is_training=False)
 
 # Restore checkpoint
 ckpt = tf.compat.v2.train.Checkpoint(model=detection_model)
-ckpt.restore('./trained_model/ckpt-7').expect_partial()
+ckpt.restore('./trained_model/model/ckpt-7').expect_partial()
 
-category_index = label_map_util.create_category_index_from_labelmap('./trained_model/label_map.pbtxt')
+category_index = label_map_util.create_category_index_from_labelmap('./trained_model/model/label_map.pbtxt')
 
 @tf.function
 def detect_fn(image):
@@ -36,13 +38,9 @@ def detect_fn(image):
     detections = detection_model.postprocess(prediction_dict, shapes)
     return detections
 
-
 def save_picture(file):
-    # randon_uid = str(uuid4())
     _, f_ext = os.path.splitext(file.filename)
     
-    # picture_name = (randon_uid if fileName==None else fileName.lower().replace(' ', '')) + f_ext 
-        
     picture_path = os.path.join("original_img",file.filename)
 
     img = Image.open(file.file)
@@ -52,14 +50,12 @@ def save_picture(file):
  
 @app.post("/predict")
 async def predict(file: UploadFile):
-
-    # read image from outside
+    # read image from body request
     image_np = np.array(tf.image.decode_jpeg(file.file.read(), channels=3))
     input_tensor = tf.convert_to_tensor(np.expand_dims(image_np, 0), dtype=tf.float32)
     
     # save original image
     file_path = save_picture(file)
-
     # predict image
     detections = detect_fn(input_tensor)
 
@@ -70,30 +66,37 @@ async def predict(file: UploadFile):
 
     detections['detection_classes'] = detections['detection_classes'].astype(np.int64)
 
+    # get class name
+    max_score_index = np.argmax(detections['detection_scores'])
+    class_index = detections['detection_classes'][max_score_index]
+    class_name = category_index[class_index + 1]
+
+    print(max_score_index)
+
     label_id_offset = 1
     image_np_with_detections = image_np.copy()
 
     viz_utils.visualize_boxes_and_labels_on_image_array(
-                image_np_with_detections,
-                detections['detection_boxes'],
-                detections['detection_classes']+label_id_offset,
-                detections['detection_scores'],
-                category_index,
-                use_normalized_coordinates=True,
-                line_thickness=3,
-                max_boxes_to_draw=1,
-                min_score_thresh=.5,
-                agnostic_mode=False)
+        image_np_with_detections,
+        detections['detection_boxes'],
+        detections['detection_classes']+label_id_offset,
+        detections['detection_scores'],
+        category_index,
+        use_normalized_coordinates=True,
+        line_thickness=3,
+        max_boxes_to_draw=1,
+        min_score_thresh=.50,
+        agnostic_mode=False)
 
     plt.imshow(cv2.cvtColor(image_np_with_detections, cv2.COLOR_RGB2RGBA))
 
     plt.axis('off')
     plt.savefig(os.path.join('./predicted_img/', file.filename), bbox_inches='tight', pad_inches=0)
-
     predictedImagePath = os.path.join('/predicted_img', file.filename)
 
     return {
         "status": "OK",
         "predicted_image_path": predictedImagePath, 
         "original_image_path": file_path,
+        "class_name": class_name
     }
